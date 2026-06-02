@@ -6,6 +6,7 @@ RUN npm ci
 
 FROM node:24-alpine AS builder
 WORKDIR /app
+ENV DATABASE_URL=file:./sprintflow.db
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p public && npm run build
@@ -14,13 +15,24 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 # node:*-alpine ships a 'node' user at uid 1000 — reuse it instead of
 # creating a duplicate (adduser would fail with uid conflict).
-RUN apk add --no-cache tini
-ENV NODE_ENV=production PORT=3000
+RUN apk add --no-cache tini \
+  && mkdir -p /data/backups /app/prisma/backups \
+  && chown -R node:node /data /app
+ENV NODE_ENV=production \
+  PORT=3000 \
+  DATABASE_URL=file:/data/sprintflow.db \
+  SPRINTFLOW_SEED_ON_EMPTY=true
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/package*.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/prisma/schema.prisma ./prisma/schema.prisma
+COPY --from=builder --chown=node:node /app/prisma/apply-schema.cjs ./prisma/apply-schema.cjs
+COPY --from=builder --chown=node:node /app/prisma/bootstrap.cjs ./prisma/bootstrap.cjs
+COPY --from=builder --chown=node:node /app/prisma/migrations ./prisma/migrations
+COPY --from=builder --chown=node:node /app/prisma/seed.cjs ./prisma/seed.cjs
+RUN rm -rf /app/prisma/backups && ln -s /data/backups /app/prisma/backups
 USER node
 EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["npx", "next", "start", "-p", "3000"]
+CMD ["sh", "-c", "node prisma/bootstrap.cjs && ./node_modules/.bin/next start -H 0.0.0.0 -p ${PORT:-3000}"]
