@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  summary     String
+  leadName    String
+  color       String   @default("#2563eb")
+  startDate   DateTime?
+  targetDate  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  issues      Issue[]
+  statuses    Status[]
+  sprints     Sprint[]
+  members     Member[]
+}
+
+model Status {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  category  String   @default("TODO")
+  color     String   @default("#94a3b8")
+  sortOrder Int      @default(0)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+
+  @@index([projectId, sortOrder])
+}
+
+model Sprint {
+  id        String    @id @default(cuid())
+  projectId String
+  name      String
+  goal      String
+  status    String    @default("PLANNED")
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+
+  @@index([projectId, status])
+}
+
+model Member {
+  id             String    @id @default(cuid())
+  projectId      String
+  name           String
+  initials       String
+  role           String
+  color          String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedIssues Issue[]   @relation("AssigneeIssues")
+  reportedIssues Issue[]   @relation("ReporterIssues")
+  comments       Comment[]
+
+  @@index([projectId])
+}
+
+model Issue {
+  id             String       @id @default(cuid())
+  projectId      String
+  sprintId       String?
+  parentId       String?
+  statusId       String
+  assigneeId     String?
+  reporterId     String?
+  issueKey       String       @unique
+  type           String       @default("TASK")
+  summary        String
+  description    String       @default("")
+  priority       String       @default("MEDIUM")
+  labels         String       @default("[]")
+  storyPoints    Int          @default(0)
+  estimateHours  Int          @default(0)
+  loggedHours    Int          @default(0)
+  rank           Int          @default(0)
+  isFlagged      Boolean      @default(false)
+  startDate      DateTime?
+  dueDate        DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint         Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  status         Status       @relation(fields: [statusId], references: [id])
+  assignee       Member?      @relation("AssigneeIssues", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter       Member?      @relation("ReporterIssues", fields: [reporterId], references: [id], onDelete: SetNull)
+  parent         Issue?       @relation("IssueHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children       Issue[]      @relation("IssueHierarchy")
+  comments       Comment[]
+  attachments    Attachment[]
+
+  @@index([projectId, rank])
+  @@index([sprintId])
+  @@index([statusId])
+  @@index([parentId])
+  @@index([assigneeId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  issueId   String
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  author    Member?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([issueId, createdAt])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  issueId   String
+  fileName  String
+  url       String
+  fileSize  Int      @default(0)
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId, createdAt])
+}
