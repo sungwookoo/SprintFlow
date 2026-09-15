@@ -60,3 +60,9 @@ npm run start -- -p 3000
 - [제품 기획서](docs/product-plan.md)
 - [기능 정의서](docs/functional-spec.md)
 - [요구사항 관리 문서](docs/requirements-log.md)
+
+## 빈 데이터베이스에서 시작
+
+첫 접속 시 프로젝트가 없으면 기본 프로젝트와 작업 상태 4개를 원자적으로 생성합니다. 기존 프로젝트·작업은 변경하지 않으며 샘플 일정은 생성하지 않습니다. 운영 장애 복구에 `db:reset`이나 `db:seed`를 사용하지 마세요. 두 명령은 기존 데이터를 삭제합니다.
+
+회귀 검증: `npx prisma generate && npm test`. 임시 SQLite DB에서 동시 첫 접속과 기존 데이터 보존을 검증합니다.

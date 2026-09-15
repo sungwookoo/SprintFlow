@@ -1,3 +1,4 @@
+import { ensureProject } from "@/lib/ensure-project";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -161,15 +162,7 @@ function serializeSprint(sprint: Awaited<ReturnType<typeof prisma.sprint.findMan
 }
 
 export async function getWorkspaceData(): Promise<WorkspaceData> {
-  const project = await prisma.project.findFirst({
-    orderBy: {
-      createdAt: "asc"
-    }
-  });
-
-  if (!project) {
-    throw new Error("프로젝트 데이터가 없습니다. npm run db:reset으로 샘플 데이터를 생성하세요.");
-  }
+  const project = await ensureProject(prisma);
 
   const [statuses, sprints, members, issues] = await Promise.all([
     prisma.status.findMany({
