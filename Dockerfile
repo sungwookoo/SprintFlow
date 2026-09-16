@@ -18,7 +18,9 @@ WORKDIR /app
 # creating a duplicate (adduser would fail with uid conflict).
 # openssl is for Prisma's sqlite engine (libssl); harmless on stateless
 # apps.
-RUN apk add --no-cache tini openssl
+RUN apk upgrade --no-cache \
+  && apk add --no-cache tini openssl \
+  && npm install -g npm@11.19.1
 ENV NODE_ENV=production PORT=3000
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public
