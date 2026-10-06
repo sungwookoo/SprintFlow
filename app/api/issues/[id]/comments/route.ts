@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authorize, validReferences } from "@/lib/auth";
 
 import { serializeComment } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
@@ -15,8 +16,12 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
+  const session = await authorize(request);
+  if (session instanceof Response) return session;
   const { id } = await context.params;
+  if (!await prisma.issue.count({ where: { id, projectId: session.projectId!, deletedAt: null } })) return NextResponse.json({ message: "작업을 찾을 수 없습니다." }, { status: 404 });
   const payload = (await request.json()) as CreateCommentBody;
+  if (!await validReferences(session.projectId!, { authorId: payload.authorId })) return NextResponse.json({ message: "현재 그룹의 담당자만 선택할 수 있습니다." }, { status: 400 });
   const body = payload.body?.trim();
 
   if (!body) {

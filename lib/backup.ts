@@ -33,7 +33,7 @@ type BackupFile = {
 
 const projectDateFields = ["startDate", "targetDate", "createdAt", "updatedAt"] as const;
 const sprintDateFields = ["startDate", "endDate", "createdAt", "updatedAt"] as const;
-const issueDateFields = ["startDate", "dueDate", "createdAt", "updatedAt"] as const;
+const issueDateFields = ["startDate", "dueDate", "createdAt", "updatedAt", "deletedAt"] as const;
 const createdAtField = ["createdAt"] as const;
 
 function hydrateDates(record: Record<string, unknown>, fields: readonly string[]) {
@@ -64,15 +64,15 @@ function assertSnapshot(value: unknown): asserts value is BackupSnapshot {
   }
 }
 
-export async function createWorkspaceSnapshot(): Promise<BackupSnapshot> {
+export async function createWorkspaceSnapshot(projectId: string): Promise<BackupSnapshot> {
   const [projects, statuses, sprints, members, issues, comments, attachments] = await Promise.all([
-    prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.status.findMany({ orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }] }),
-    prisma.sprint.findMany({ orderBy: [{ projectId: "asc" }, { createdAt: "asc" }] }),
-    prisma.member.findMany({ orderBy: [{ projectId: "asc" }, { name: "asc" }] }),
-    prisma.issue.findMany({ orderBy: [{ rank: "asc" }, { createdAt: "asc" }] }),
-    prisma.comment.findMany({ orderBy: [{ issueId: "asc" }, { createdAt: "asc" }] }),
-    prisma.attachment.findMany({ orderBy: [{ issueId: "asc" }, { createdAt: "asc" }] })
+    prisma.project.findMany({ where: { id: projectId }, orderBy: { createdAt: "asc" } }),
+    prisma.status.findMany({ where: { projectId }, orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }] }),
+    prisma.sprint.findMany({ where: { projectId }, orderBy: [{ projectId: "asc" }, { createdAt: "asc" }] }),
+    prisma.member.findMany({ where: { projectId }, orderBy: [{ projectId: "asc" }, { name: "asc" }] }),
+    prisma.issue.findMany({ where: { projectId }, orderBy: [{ rank: "asc" }, { createdAt: "asc" }] }),
+    prisma.comment.findMany({ where: { issue: { projectId } }, orderBy: [{ issueId: "asc" }, { createdAt: "asc" }] }),
+    prisma.attachment.findMany({ where: { issue: { projectId } }, orderBy: [{ issueId: "asc" }, { createdAt: "asc" }] })
   ]);
 
   return {
@@ -80,7 +80,7 @@ export async function createWorkspaceSnapshot(): Promise<BackupSnapshot> {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
     tables: {
-      projects,
+      projects: projects.map(({ accessCodeHash: _code, accessVersion: _version, ...project }) => project),
       statuses,
       sprints,
       members,
@@ -95,10 +95,11 @@ export function getBackupFileName(snapshot = new Date()) {
   return `sprintflow-backup-${snapshot.toISOString().replace(/[:.]/g, "-")}.json`;
 }
 
-export async function saveSnapshot(snapshot: BackupSnapshot) {
-  await fs.mkdir(backupDir, { recursive: true });
+export async function saveSnapshot(snapshot: BackupSnapshot, projectId: string) {
+  const directory = path.join(backupDir, projectId);
+  await fs.mkdir(directory, { recursive: true });
   const fileName = getBackupFileName(new Date(snapshot.exportedAt));
-  const filePath = path.join(backupDir, fileName);
+  const filePath = path.join(directory, fileName);
   await fs.writeFile(filePath, JSON.stringify(snapshot, null, 2), "utf8");
   const stat = await fs.stat(filePath);
 
@@ -110,14 +111,15 @@ export async function saveSnapshot(snapshot: BackupSnapshot) {
   };
 }
 
-export async function listBackupFiles(): Promise<BackupFile[]> {
-  await fs.mkdir(backupDir, { recursive: true });
-  const entries = await fs.readdir(backupDir, { withFileTypes: true });
+export async function listBackupFiles(projectId: string): Promise<BackupFile[]> {
+  const directory = path.join(backupDir, projectId);
+  await fs.mkdir(directory, { recursive: true });
+  const entries = await fs.readdir(directory, { withFileTypes: true });
   const files = await Promise.all(
     entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map(async (entry) => {
-        const filePath = path.join(backupDir, entry.name);
+        const filePath = path.join(directory, entry.name);
         const stat = await fs.stat(filePath);
         return {
           fileName: entry.name,
@@ -131,8 +133,8 @@ export async function listBackupFiles(): Promise<BackupFile[]> {
   return files.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export async function loadLatestSnapshot() {
-  const [latest] = await listBackupFiles();
+export async function loadLatestSnapshot(projectId: string) {
+  const [latest] = await listBackupFiles(projectId);
   if (!latest) {
     throw new Error("복원할 서버 백업이 없습니다.");
   }
@@ -143,10 +145,21 @@ export async function loadLatestSnapshot() {
   return { snapshot, file: latest };
 }
 
-export async function restoreWorkspaceSnapshot(input: unknown) {
+export async function restoreWorkspaceSnapshot(input: unknown, projectId: string) {
   assertSnapshot(input);
 
   const tables = input.tables;
+  if (tables.projects.length !== 1 || tables.projects[0].id !== projectId) throw new Error("선택한 그룹의 백업만 복원할 수 있습니다.");
+  for (const name of ["statuses", "sprints", "members", "issues"] as const) {
+    if (tables[name].some(row => row.projectId !== projectId)) throw new Error("다른 그룹의 데이터가 포함되어 있습니다.");
+  }
+  const ids = (rows: { id?: string }[]) => new Set(rows.map(row => row.id));
+  const statusIds = ids(tables.statuses), sprintIds = ids(tables.sprints), memberIds = ids(tables.members), issueIds = ids(tables.issues);
+  if (tables.issues.some(row => !statusIds.has(row.statusId) || (row.sprintId && !sprintIds.has(row.sprintId)) ||
+    (row.parentId && !issueIds.has(row.parentId)) || (row.assigneeId && !memberIds.has(row.assigneeId)) || (row.reporterId && !memberIds.has(row.reporterId))) ||
+    tables.comments.some(row => !issueIds.has(row.issueId) || (row.authorId && !memberIds.has(row.authorId))) ||
+    tables.attachments.some(row => !issueIds.has(row.issueId))) throw new Error("백업의 그룹 내 참조 관계가 올바르지 않습니다.");
+  if (tables.attachments.some(row => { try { return !["http:", "https:"].includes(new URL(row.url).protocol); } catch { return true; } })) throw new Error("첨부 링크 형식이 올바르지 않습니다.");
   const projects = tables.projects.map((item) =>
     hydrateDates(item as Record<string, unknown>, projectDateFields)
   ) as Prisma.ProjectCreateManyInput[];
@@ -166,15 +179,16 @@ export async function restoreWorkspaceSnapshot(input: unknown) {
   ) as Prisma.AttachmentCreateManyInput[];
 
   await prisma.$transaction(async (tx) => {
-    await tx.comment.deleteMany();
-    await tx.attachment.deleteMany();
-    await tx.issue.deleteMany();
-    await tx.sprint.deleteMany();
-    await tx.status.deleteMany();
-    await tx.member.deleteMany();
-    await tx.project.deleteMany();
+    await tx.comment.deleteMany({ where: { issue: { projectId } } });
+    await tx.attachment.deleteMany({ where: { issue: { projectId } } });
+    await tx.issue.deleteMany({ where: { projectId } });
+    await tx.sprint.deleteMany({ where: { projectId } });
+    await tx.status.deleteMany({ where: { projectId } });
+    await tx.member.deleteMany({ where: { projectId } });
 
-    if (projects.length) await tx.project.createMany({ data: projects });
+
+    const project = projects[0];
+    await tx.project.update({ where: { id: projectId }, data: { name: project.name, summary: project.summary, leadName: project.leadName, color: project.color, startDate: project.startDate, targetDate: project.targetDate, accessVersion: { increment: 1 } } });
     if (statuses.length) await tx.status.createMany({ data: statuses });
     if (sprints.length) await tx.sprint.createMany({ data: sprints });
     if (members.length) await tx.member.createMany({ data: members });

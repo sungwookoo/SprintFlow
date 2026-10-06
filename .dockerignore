@@ -6,6 +6,7 @@ node_modules
 
 .env
 .env.local
+*.local.json
 *.log
 *.tsbuildinfo
 

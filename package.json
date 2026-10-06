@@ -8,6 +8,7 @@
     "start": "next start -H 127.0.0.1",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "node --experimental-strip-types --test tests/*.test.cjs",
+    "test:integration": "node --test tests/access.integration.cjs",
     "typecheck": "tsc --noEmit",
     "db:push": "prisma generate && node prisma/apply-schema.cjs",
     "db:seed": "prisma db seed",

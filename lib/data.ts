@@ -1,4 +1,3 @@
-import { ensureProject } from "@/lib/ensure-project";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -161,8 +160,8 @@ function serializeSprint(sprint: Awaited<ReturnType<typeof prisma.sprint.findMan
   };
 }
 
-export async function getWorkspaceData(): Promise<WorkspaceData> {
-  const project = await ensureProject(prisma);
+export async function getWorkspaceData(projectId: string): Promise<WorkspaceData> {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
 
   const [statuses, sprints, members, issues] = await Promise.all([
     prisma.status.findMany({
@@ -178,7 +177,7 @@ export async function getWorkspaceData(): Promise<WorkspaceData> {
       orderBy: { name: "asc" }
     }),
     prisma.issue.findMany({
-      where: { projectId: project.id },
+      where: { projectId: project.id, deletedAt: null },
       include: issueInclude,
       orderBy: [{ rank: "asc" }, { createdAt: "asc" }]
     })

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { authorize, validReferences } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 import { issueInclude, serializeIssue } from "@/lib/data";
@@ -43,8 +44,12 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
+  const session = await authorize(request);
+  if (session instanceof Response) return session;
   const { id } = await context.params;
+  if (!await prisma.issue.count({ where: { id, projectId: session.projectId!, deletedAt: null } })) return NextResponse.json({ message: "작업을 찾을 수 없습니다." }, { status: 404 });
   const body = (await request.json()) as UpdateIssueBody;
+  if (!await validReferences(session.projectId!, { statusId: body.statusId, sprintId: body.sprintId, assigneeId: body.assigneeId })) return NextResponse.json({ message: "현재 그룹의 항목만 선택할 수 있습니다." }, { status: 400 });
   const data: Prisma.IssueUncheckedUpdateInput = {};
 
   if (typeof body.statusId === "string") data.statusId = body.statusId;
@@ -75,9 +80,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
+  const session = await authorize(_request);
+  if (session instanceof Response) return session;
   const { id } = await context.params;
-  await prisma.issue.delete({
-    where: { id }
+  if (!await prisma.issue.count({ where: { id, projectId: session.projectId!, deletedAt: null } })) return NextResponse.json({ message: "작업을 찾을 수 없습니다." }, { status: 404 });
+  await prisma.$transaction(async tx => {
+    await tx.issue.updateMany({ where: { parentId: id, projectId: session.projectId! }, data: { parentId: null } });
+    await tx.issue.update({ where: { id, projectId: session.projectId! }, data: { deletedAt: new Date() } });
   });
 
   return NextResponse.json({ ok: true });
