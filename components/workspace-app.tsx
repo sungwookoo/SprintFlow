@@ -347,7 +347,7 @@ function TopBar({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-bold text-ocean">
             <span className="h-2 w-2 rounded bg-mint" />
-            {data.project.leadName}
+            프로젝트 담당: {data.project.leadName}
           </div>
           <h1 className="mt-1 truncate text-2xl font-bold text-ink">{data.project.name}</h1>
           <p className="mt-1 max-w-3xl text-sm font-medium text-slate-500">{data.project.summary}</p>
@@ -1117,11 +1117,13 @@ const memberColorOptions = ["#2563eb", "#15a46b", "#7c3aed", "#e11d48", "#d97706
 
 function SettingsView({
   data,
+  isAdmin,
   onCreateMember,
   onUpdateMember,
   onDeleteMember
 }: {
   data: WorkspaceData;
+  isAdmin: boolean;
   onCreateMember: (payload: CreateMemberPayload) => Promise<void>;
   onUpdateMember: (memberId: string, patch: MemberPatch) => Promise<void>;
   onDeleteMember: (memberId: string) => Promise<void>;
@@ -1293,7 +1295,7 @@ function SettingsView({
           <div>
             <h2 className="text-lg font-bold text-ink">프로젝트 설정</h2>
             <p className="mt-1 text-sm font-medium text-slate-500">
-              로컬 단일 사용자 환경에서 데이터 백업과 담당자 목록을 관리합니다.
+              현재 그룹의 담당자 목록을 관리합니다. 백업·복원과 담당자 삭제는 관리자 전용입니다. 담당자 이름은 로그인 계정이 아닙니다.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-lg bg-smoke px-3 py-2 text-sm font-bold text-slate-600">
@@ -1303,8 +1305,8 @@ function SettingsView({
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-lg border border-line bg-white p-4 shadow-card">
+      <section className={clsx("grid gap-4", isAdmin && "xl:grid-cols-[0.9fr_1.1fr]")}>
+        {isAdmin && <div className="rounded-lg border border-line bg-white p-4 shadow-card">
           <div className="flex items-center gap-2">
             <Archive size={18} className="text-ocean" />
             <h3 className="text-base font-bold text-ink">백업 및 복원</h3>
@@ -1320,7 +1322,7 @@ function SettingsView({
                 <div>
                   <div className="text-sm font-bold text-ink">서버 백업 저장</div>
                   <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
-                    현재 상태를 <span className="font-bold text-ink">prisma/backups</span>에 저장하고 최신 복원 기준으로 사용합니다.
+                    현재 그룹의 데이터를 서버에 저장합니다. 복원하면 해당 그룹의 데이터가 교체되고 참여자는 다시 입장해야 합니다.
                   </p>
                 </div>
               </div>
@@ -1425,12 +1427,12 @@ function SettingsView({
           {backupMessage ? (
             <div className="mt-4 rounded-lg bg-smoke px-3 py-2 text-sm font-semibold text-slate-600">{backupMessage}</div>
           ) : null}
-        </div>
+        </div>}
 
         <div className="rounded-lg border border-line bg-white p-4 shadow-card">
           <div className="flex items-center gap-2">
             <Users size={18} className="text-mint" />
-            <h3 className="text-base font-bold text-ink">사용자 관리</h3>
+            <h3 className="text-base font-bold text-ink">담당자 목록</h3>
           </div>
 
           <form onSubmit={submitNewMember} className="mt-4 grid gap-2 xl:grid-cols-[1fr_92px_120px_96px_auto]">
@@ -1521,7 +1523,7 @@ function SettingsView({
                     <Check size={16} />
                     저장
                   </button>
-                  <button
+                  {isAdmin && <button
                     type="button"
                     onClick={() => void deleteMember(member)}
                     disabled={savingMemberId === member.id}
@@ -1530,7 +1532,7 @@ function SettingsView({
                   >
                     <Trash2 size={16} />
                     삭제
-                  </button>
+                  </button>}
                 </div>
               );
             })}
@@ -1548,7 +1550,8 @@ function IssueDrawer({
   onUpdate,
   onCreate,
   onComment,
-  onAttachment
+  onAttachment,
+  onDelete
 }: {
   issue: IssueDto | null;
   data: WorkspaceData;
@@ -1556,6 +1559,7 @@ function IssueDrawer({
   onUpdate: (issueId: string, patch: IssuePatch) => Promise<void>;
   onCreate: (payload: CreateIssuePayload) => Promise<void>;
   onComment: (issueId: string, body: string) => Promise<void>;
+  onDelete: (issueId: string) => Promise<void>;
   onAttachment: (issueId: string, attachment: { fileName: string; url: string }) => Promise<void>;
 }) {
   const [draft, setDraft] = useState({
@@ -1571,6 +1575,7 @@ function IssueDrawer({
   const [subtaskSummary, setSubtaskSummary] = useState("");
   const [commentBody, setCommentBody] = useState("");
   const [attachment, setAttachment] = useState({ fileName: "", url: "" });
+  const [deleteError, setDeleteError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -1661,6 +1666,8 @@ function IssueDrawer({
                 <span className="text-xs font-bold text-slate-500">{getSprintLabel(data.sprints, issue.sprintId)}</span>
               </div>
               <h2 className="mt-2 break-words text-xl font-bold text-ink">{issue.summary}</h2>
+              <button className="mt-2 text-sm text-rose" onClick={async () => { if (window.confirm("이 작업을 휴지통으로 이동할까요? 하위 작업은 유지되며, 관리자가 복구할 수 있습니다.")) { try { await onDelete(currentIssue.id); onClose(); } catch (error) { setDeleteError((error as Error).message); } } }}>휴지통으로 이동</button>
+              {deleteError && <p role="alert" className="text-sm text-rose">{deleteError}</p>}
             </div>
             <button
               type="button"
@@ -2055,7 +2062,7 @@ function removeMemberReferences(issue: IssueDto, memberId: string): IssueDto {
   };
 }
 
-export function WorkspaceApp({ initialData }: { initialData: WorkspaceData }) {
+export function WorkspaceApp({ initialData, isAdmin }: { initialData: WorkspaceData; isAdmin: boolean }) {
   const [data, setData] = useState(initialData);
   const [activeView, setActiveView] = useState<ViewKey>("board");
   const [query, setQuery] = useState("");
@@ -2257,6 +2264,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspaceData }) {
           {activeView === "settings" ? (
             <SettingsView
               data={data}
+              isAdmin={isAdmin}
               onCreateMember={createMember}
               onUpdateMember={updateMember}
               onDeleteMember={deleteMember}
@@ -2273,6 +2281,11 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspaceData }) {
         onCreate={createIssue}
         onComment={createComment}
         onAttachment={createAttachment}
+        onDelete={async id => {
+          const response = await fetch('/api/issues/' + id, { method: 'DELETE' });
+          if (!response.ok) throw new Error('휴지통으로 이동하지 못했습니다. 로그인 상태를 확인해주세요.');
+          setData(current => ({ ...current, issues: current.issues.filter(issue => issue.id !== id).map(issue => issue.parentId === id ? { ...issue, parentId: null } : issue) }));
+        }}
       />
     </div>
   );

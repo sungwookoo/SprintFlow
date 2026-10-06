@@ -14,6 +14,8 @@ model Project {
   summary     String
   leadName    String
   color       String   @default("#2563eb")
+  accessCodeHash String? @unique
+  accessVersion Int @default(0)
   startDate   DateTime?
   targetDate  DateTime?
   createdAt   DateTime @default(now())
@@ -87,6 +89,7 @@ model Issue {
   loggedHours    Int          @default(0)
   rank           Int          @default(0)
   isFlagged      Boolean      @default(false)
+  deletedAt      DateTime?
   startDate      DateTime?
   dueDate        DateTime?
   createdAt      DateTime     @default(now())
@@ -130,4 +133,10 @@ model Attachment {
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([issueId, createdAt])
+}
+
+model LoginThrottle {
+  id String @id
+  windowStart BigInt
+  attempts Int @default(0)
 }

@@ -1,3 +1,4 @@
+import { authorize } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 import { loadLatestSnapshot, restoreWorkspaceSnapshot } from "@/lib/backup";
@@ -10,10 +11,13 @@ type RestoreBody = {
 };
 
 export async function POST(request: Request) {
+  const session = await authorize(request, { admin: true, project: true });
+  if (session instanceof Response) return session;
+  const projectId = session.projectId!;
   try {
     const body = (await request.json()) as RestoreBody;
-    const source = body.latest ? await loadLatestSnapshot() : { snapshot: body.snapshot, file: null };
-    const restored = await restoreWorkspaceSnapshot(source.snapshot);
+    const source = body.latest ? await loadLatestSnapshot(projectId) : { snapshot: body.snapshot, file: null };
+    const restored = await restoreWorkspaceSnapshot(source.snapshot, projectId);
 
     return NextResponse.json({
       restored,

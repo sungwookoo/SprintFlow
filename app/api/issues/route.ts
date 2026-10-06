@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { authorize, validReferences } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 import { issueInclude, serializeIssue } from "@/lib/data";
@@ -45,8 +46,12 @@ async function nextIssueKey(projectId: string) {
 }
 
 export async function POST(request: Request) {
+  const session = await authorize(request);
+  if (session instanceof Response) return session;
   const body = (await request.json()) as CreateIssueBody;
-  const projectId = body.projectId;
+  const projectId = session.projectId!;
+  if (body.projectId && body.projectId !== projectId) return NextResponse.json({ message: "다른 그룹에 접근할 수 없습니다." }, { status: 403 });
+  if (!await validReferences(projectId, { statusId: body.statusId, sprintId: body.sprintId, parentId: body.parentId, assigneeId: body.assigneeId })) return NextResponse.json({ message: "현재 그룹의 항목만 선택할 수 있습니다." }, { status: 400 });
   const summary = body.summary?.trim();
 
   if (!projectId || !summary) {
