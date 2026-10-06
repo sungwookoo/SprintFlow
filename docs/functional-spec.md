@@ -57,24 +57,24 @@
 ### 서버 백업 저장
 
 - 현재 SQLite DB의 주요 테이블을 JSON 스냅샷으로 export한다.
-- 저장 위치는 `prisma/backups`이다.
+- 저장 위치는 `prisma/backups/<projectId>`이다.
 - 파일명은 `sprintflow-backup-{ISO_TIMESTAMP}.json` 형식이다.
 - 버튼 클릭 후 확인 패널에서 `저장 실행`을 눌러야 저장된다.
 
 ### 최신 백업 복원
 
-- `prisma/backups`에서 가장 최근 JSON 백업을 찾는다.
-- 현재 DB 데이터를 삭제하고 백업 데이터로 교체한다.
+- `prisma/backups/<projectId>`에서 가장 최근 JSON 백업을 찾는다.
+- 선택한 그룹의 데이터만 교체하고, 다른 그룹과 인증 정보는 보존한다. 해당 그룹의 참여자 세션은 만료한다.
 - 복원 대상은 프로젝트, 상태, 스프린트, 사용자, 이슈, 댓글, 첨부이다.
 
 ### 파일 다운로드
 
-- 현재 DB 데이터를 JSON 백업 파일로 브라우저에 다운로드한다.
+- 선택한 그룹의 데이터를 JSON 백업 파일로 다운로드한다. 관리자 전용이며 인증 정보는 제외한다.
 - 서버 백업 폴더에는 저장하지 않는다.
 
 ### 파일로 복원
 
-- 사용자가 선택한 JSON 백업 파일을 읽어 현재 DB를 교체한다.
+- 관리자가 선택한 같은 그룹 ID의 JSON 백업으로 해당 그룹만 복원한다.
 - 백업 포맷이 SprintFlow 스키마와 맞지 않으면 복원하지 않는다.
 
 ## 3. 데이터 모델 요약
@@ -109,9 +109,13 @@
 
 ## 4. API 요약
 
+- `POST /api/access`: 로그인·로그아웃·관리자 그룹 선택
+- `POST /api/groups`: 관리자 그룹 생성
+- `PATCH/DELETE /api/groups/[id]`: 관리자 그룹 수정·코드 재발급·삭제
+- `GET/POST /api/trash`: 관리자 휴지통 조회·복구·영구 삭제
 - `POST /api/issues`: 이슈 생성
 - `PATCH /api/issues/[id]`: 이슈 수정
-- `DELETE /api/issues/[id]`: 이슈 삭제
+- `DELETE /api/issues/[id]`: 이슈 휴지통 이동
 - `POST /api/issues/[id]/comments`: 댓글 생성
 - `POST /api/issues/[id]/attachments`: 첨부 메타데이터 생성
 - `POST /api/members`: 사용자 생성
